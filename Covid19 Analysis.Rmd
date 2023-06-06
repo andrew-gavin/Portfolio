@@ -1,0 +1,66 @@
+---
+title: "Covid19 Analysis"
+author: "Andrew Gavin"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This is my independent analysis of a Covid19 dataset retrieved from [Kagggle](https://www.kaggle.com/datasets/lin0li/covid19testing). 
+
+```{r}
+#First open up dataset 
+setwd("~/OneDrive/Documents/Portfolio/Covid19 Analysis")
+covid19 <- read.csv("covid19.csv")
+head(covid19)
+```
+
+```{r}
+library(tibble)
+library(dplyr)
+glimpse(covid19)
+vector_cols <- colnames(covid19)
+
+covid19_data <- covid19 %>% filter(Province_State == "All States")
+covid19_data<-as.data.frame(covid19_data)
+covid19_data$Province_State <- NULL
+
+daily_columns <- c('Date','Country_Region','hospitalizedCurr','daily_tested',
+                   'daily_positive','active')
+daily_covid <- covid19_data[c(daily_columns)]
+```
+Question: 
+What are the countries with the most positive results out of the number of tests performed?
+
+```{r}
+daily_covid<-daily_covid %>% group_by(Country_Region) %>% summarise(
+  active = sum(active),
+  tested = sum(daily_tested),
+  positive = sum(daily_positive),
+  hospitalised = sum(hospitalizedCurr)
+)
+head(daily_covid)
+daily_covid<-arrange(daily_covid, desc(positive))
+top10_covid<-head(daily_covid, 10)
+
+#Creating Vectors
+tested_cases<-top10_covid$tested
+positive_cases<-top10_covid$positive
+active_cases<-top10_covid$active
+hospitalised_cases <- top10_covid$hospitalised
+countries <- top10_covid$Country_Region
+
+names(tested_cases)<-countries
+names(positive_cases)<-countries
+names(active_cases)<-countries
+names(hospitalised_cases)<-countries
+
+#Calculating the postive number of tests/ total number of tests
+positive_tested_ratio<-as.data.frame(positive_cases/tested_cases) %>% arrange(desc(positive_cases/tested_cases))
+colnames(positive_tested_ratio) <-("Positive test Ratio")
+head(positive_tested_ratio, 5)
+```
+Here, we can see that Bangladesh is the country with the highest positive test ratio (0.154), with the UK, US, Belgium and Turkey the next respective highest.
+
