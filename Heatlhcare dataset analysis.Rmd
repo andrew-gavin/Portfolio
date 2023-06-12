@@ -1,0 +1,192 @@
+---
+title: "Health Data Analysis"
+author: "Andrew Gavin"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Data Summary
+```{r}
+
+data <- read.csv("data.csv")
+summary(data)
+```
+
+Now an overview of each age group. 
+```{r}
+by(data, data$age_grp, summary)
+```
+# Install packages
+```{r}
+#install.library(tidyverse)
+#install.library(RColorBrewer)
+library(DescTools)
+library(tidyverse)
+library(RColorBrewer)
+```
+
+```{r}
+bmi.counts <- table (data$bmi)
+barplot (bmi.counts, xlab = "BMI", ylab = "Number of People", 
+         main = "BMI of Whitehall Participants", col=heat.colors(20))
+
+```
+
+While BMI is a continuous variable, it can be categorised into different groups which can better be used for analysis. 
+```{r}
+# Creating a new column with BMI Groups rather than number
+data$bmi.grouped <- NA
+data$bmi.grouped[data$bmi<18.5]<-0
+data$bmi.grouped[data$bmi>=18.5 & data$bmi<25]<-1
+data$bmi.grouped[data$bmi>=25 & data$bmi<30]<-2
+data$bmi.grouped[data$bmi>=30]<-3
+
+# Now to check if the variable is using right format
+class(data$bmi.grouped)
+```
+
+Needs to be changed to ordered class as well as labelled
+```{r}
+data$bmi.grouped <- factor(data$bmi.grouped, labels = c("Underweight", "Healthy", "Overweight", "Obese"))
+
+print(summary(data$bmi.grouped))
+bmi_group_count<- table(data$bmi.grouped)
+
+barplot(bmi_group_count,xlab = "Number of People", ylab = "BMI", main = "BMI of Participants", col=heat.colors(10))
+```
+
+```{r}
+
+Za <- qnorm(0.975)
+n_bmi <- sum(!is.na(data$bmi))
+sd_bmi <- sd(data$bmi, na.rm = TRUE)
+se_bmi <- sd_bmi/sqrt(n_bmi)
+mean_bmi <- mean(data$bmi, na.rm = TRUE)
+low.ci_bmi <- mean_bmi - (Za*se_bmi)
+high.ci_bmi <- mean_bmi + (Za*se_bmi)
+ci <- c(low.ci_bmi, high.ci_bmi)
+print("The standerd deviation is")
+print(sd_bmi)
+print("The standerd error is:")
+print(se_bmi)
+print("the average bmi is:")
+print(mean_bmi)
+print("the confidence intervals are:")
+print(ci)
+```
+
+
+
+
+
+
+Here, we can easily see a summary of how many people are in each BMI category in an easy to read and understand format. 
+
+Now to do something similar with systolic blood pressure.
+
+```{r}
+library(ggplot2)
+ggplot(data, aes(x=bmi, fill = bmi.grouped)) + geom_histogram(position = 'dodge')
+```
+Possibly a better way of showing the data as it shows the spread of the data but also shows the groupings in colors
+
+Now to find some summary statistics including Standerd deviation, standerd error and the confidence intervals.
+
+```{r}
+sbp_number <- sum(!is.na(data$sbp))
+SBP_sd <- sd(data$sbp, na.rm = TRUE)
+round(SBP_sd, digits = 3)
+SBP_se <- SBP_sd/sqrt(sbp_number)
+round(SBP_se, digits = 3)
+print('The standerd deviation is:')
+print(round(SBP_sd, 3))
+print('The standerd error is:') 
+print(round(SBP_se, 3))
+
+# Now the confidence intervals
+Za <- qnorm(0.975)
+SBP.mean <- mean(data$sbp, na.rm = TRUE)
+
+lower_ci <- SBP.mean - (Za*SBP_se)
+higher_ci <- SBP.mean + (Za*SBP_se)
+print('The 95% confidence interval is: ')
+ci_sbp <- c(lower_ci, higher_ci)
+print(ci_sbp)
+```
+
+Question: Is systolic blood pressure different in patients different in overweight patients compared to healthy or underweught patients?
+
+To answer this, I will make 2 categories of patients and perform a Welch Two Sample t-test.
+
+```{r}
+data$bmi_binary <- NA
+data$bmi_binary[data$bmi<25]<-0
+data$bmi_binary[data$bmi>=25]<-1
+high.bmi.sbp <-data$sbp[data$bmi_binary==1]
+low.bmi.sbp <- data$sbp[data$bmi_binary ==0]
+t.test(low.bmi.sbp, high.bmi.sbp, conf.level = 0.95)
+```
+The mean SBP of patients with a BMI >25 is 131.65, which is significantly different to the mean of patients with a BMI <25 (129.49) with a **p-value** of 6.267e-05.
+
+Investigating this difference further, I am going to see what the correlation is. 
+
+```{r}
+plot(data$bmi, data$sbp, xlab = "BMI (kg/m2)", ylab = "Systolic blood pressure (mm Hg)", cex= 0.8)
+```
+```{r}
+cor(data$sbp, data$bmi, use = "complete.obs")
+```
+There is an overall positive but weak correlation between Systolic blood pressure and BMI (~0.09).
+
+Summary so far, there is a general trend of increasing BMI results in increasing blood pressure and there is a significant difference between health and underweight individuals compared to overweight individuals. But is there differences in SBP between the 4 clinical categories of BMI?
+First, I will test if there are any differences using an ANOVA test. 
+
+```{r}
+# Change the BMI group columns to factors first for ANOVA test
+data$bmi_fact <- factor(data$bmi_grp4)
+
+# Then to perform the ANOVA 
+fit1 <- aov(sbp~bmi_fact, data = data)
+summary(fit1)
+```
+There is a significant difference in blood pressure between at least 2 of the groups so I can now perform a post-hoc test.
+
+
+```{r}
+TukeyHSD(fit1, conf.level = 0.95)
+```
+
+Here, we can see significant differences in blood pressure between obese and underweight; overweight and healthy; and obese and healthy. 
+
+Next, I am going to run a linear regression model to compare the differences in SBP among the BMI groups compared just to healthy BMI patients, once adjusted for possible confounding factors such as smoking as well as LDL-C.
+
+```{r}
+#First, I have to set the secound group as the reference as this is the healthy group
+data <-within(data,bmi_fact<-relevel(bmi_fact, ref = 2))
+fit2 <- lm(sbp~bmi_fact + ldlc + currsmoker, data = data)
+summary(fit2)
+confint(fit2, level =0.95)
+```
+Now, we can see that compared to patients with a healthy BMII,  overweight and obese patients have  significantly higher SBP (1.8963 and 3.6897 respectively) compared to healthy patients, independent of smoking status and LDL-C levels. 
+
+To test if this linear model is a good fit and that it includes possible confounders, I will find the F-statistic.
+```{r}
+library(car)
+linearHypothesis(fit2, c("bmi_fact1=0", "bmi_fact3=0", "bmi_fact4=0"))
+```
+Overall, the BMI groups significantly explain the variance in SBP
+
+```{r}
+linearHypothesis(fit2, c("ldlc=0", "currsmoker=0"))
+```
+LDL-C and smoking status also significantly affect SBP but not as significant as BMI groups.
+
+## Survival Analysis
+
+To be continued..
+```
+
