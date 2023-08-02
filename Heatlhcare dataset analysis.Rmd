@@ -69,14 +69,7 @@ mean_bmi <- mean(data$bmi, na.rm = TRUE)
 low.ci_bmi <- mean_bmi - (Za*se_bmi)
 high.ci_bmi <- mean_bmi + (Za*se_bmi)
 ci <- c(low.ci_bmi, high.ci_bmi)
-print("The standerd deviation is")
-print(sd_bmi)
-print("The standerd error is:")
-print(se_bmi)
-print("the average bmi is:")
-print(mean_bmi)
-print("the confidence intervals are:")
-print(ci)
+
 ```
 
 
@@ -186,7 +179,88 @@ linearHypothesis(fit2, c("ldlc=0", "currsmoker=0"))
 LDL-C and smoking status also significantly affect SBP but not as significant as BMI groups.
 
 ## Survival Analysis
+First to get an overview of the dataset
 
-To be continued..
+```{r}
+# Surv() function creates a survival object that can be put into survfit()
+library(survminer)
+require("survival")
+model <- survfit(Surv(fu_years, death) ~ 1, data = data)
+times <- seq(0.5, 9, 0.5)
+summary(model,times)
 ```
+
+```{r}
+summodel <-summary(model,times)
+ggsurvplot(model, data = data, risk.table = TRUE, tables.height = 0.3)
+```
+
+The above graph simply visualises the survival probablility at each year of follow-up as well as the risk table.
+
+Next, I want to get a picture of the effect vitamin D levels have on survival
+```{r}
+library(dplyr)
+
+# dichotomise values around vitd median (the 3rd value in summary) 
+
+data.vitd <- data %>% mutate(vitd_med = case_when(vitd <= summary(data$vitd)[3] ~ 0, vitd > summary(data$vitd)[3] ~ 1))
+
+#The survdiff() command compares the survival distrubutions of an exposure variable by performing log-rank test
+
+survdiff(Surv(fu_years,death) ~ vitd_med, data.vitd)
+```
+Here, survdiff() function was used to compare the survival difference between the two groups of people split around the median Vitamin D value.
+
+As this seems significant, I want to analyse the association of Vitamin D with the risk of dying. 
+
+```{r}
+data.vitd$vitd_med <- as.factor(data.vitd$vitd_med)
+model_coxph <- coxph(formula = Surv(fu_years, death) ~ vitd_med, data = data.vitd)
+summary(model_coxph)
+
+```
+The risk of death is 43% decrease in risk of death per year with vitamin D consumption above the median and this is statistically significant.
+
+Now to look at other factors such as frailty, once adjusted for age group.
+
+
+```{r}
+data$frailty <- as.factor(data$frailty)
+frailty_model <- coxph(formula = Surv(fu_years, death) ~ frailty + age_grp, data = data)
+summary(frailty_model)
+```
+
+There does seem to be a significant impact of frailty on survival when adjusted for age group but this is only true if the proportional hazards assumption is not violated (i.e., the hazard ratio is consistant over time)
+
+```{r}
+model_strata <- coxph(Surv(fu_years, death) ~ strata(frailty) + age_grp, data = data)
+fit <- survfit(model_strata)
+ggsurvplot(fit, data = data, fun = "cloglog")
+```
+
+Looking at each line for each frailty group. there is clear violations of the proportional hazards assumptions as they criss cross at multiple points and are clearly not parrallel.
+
+## Affect of smoking on Survival
+
+```{r}
+model <- glm(death ~ offset(log(fu_years)) + currsmoker + age_grp + frailty, data = data, family = poisson(link = "log"))
+summary(model)
+```
+
+The rate of death is 22% higher in current smokers than non-smokers when adjusted for age and frailty. This association is statistically significant. 
+
+
+
+
+# Findings:
+
+This study has shown several things:
+
+- Some overall measures of the population health
+
+- The corrolation between Systolic blood pressure and BMI, idependent of other confounding factors such as LDL-C or smoking status
+
+- Affect of Vitamin D levels on survival
+
+- Affect of smoking on survival
 
